@@ -1,0 +1,245 @@
+<html>
+
+    <head>
+
+        <style>
+
+            .repeat-group {
+                border: 1px;
+                border-style: solid;
+            }
+
+            .repeat-subgroup {
+                border: 1px;
+                border-style: dashed;
+            }
+
+        </style>
+        <!-- Load schema data -->
+        <script src="/modular-meta-data/schema.js"></script>
+
+        <!-- Load libraries -->
+        <script src="/modular-meta-data/assets/js/knockout-3.0.0.js"></script>
+        <script src="/modular-meta-data/assets/js/jquery-1.10.2.min.js"></script>
+
+        <script type="text/javascript">
+
+            clone = function(data) {
+                return JSON.parse(JSON.stringify(data));
+            };
+
+            var stringTemplateSource = function (template) {
+                this.template = template;
+            };
+
+            stringTemplateSource.prototype.text = function () {
+                return this.template;
+            };
+
+            var stringTemplateEngine = new ko.nativeTemplateEngine();
+            stringTemplateEngine.makeTemplateSource = function (template) {
+                return new stringTemplateSource(template);
+            };
+
+            var templates = {
+                textarea: '<textarea data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id}, disable:disable"></textarea>',
+                textfield: '<input type="text" data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id}, disable:disable" />',
+                select: '<select data-bind="options: options, value:value, attr:{name:id}, optionsCaption: caption, disable:disable"></select>',
+                checkbox: '<input type="checkbox" data-bind="checked:value, attr:{name:id}, disable:disable" />'
+            };
+
+            ko.bindingHandlers.item = {
+                init: function(element, valueAccessor, allBindingsAccessor, viewModel, bindingContext) {
+                    var options = ko.utils.unwrapObservable(valueAccessor());
+                    options.value = options.value || '';
+                    options.disable = options.disable || bindingContext.$root.disable;
+                    ko.renderTemplate(templates[options.type], options, { templateEngine: stringTemplateEngine }, element, 'replaceNode');
+                }
+            };
+
+            function Group(group) {
+                this._questions = clone(group.questions);
+                this.repeats = ko.observableArray([{
+                    idx: 0,
+                    class: group.canRepeat ? 'repeat-subgroup' : '',
+                    questions: group.questions
+                }]);
+                this.canRepeat = group.canRepeat;
+                this.maxRepeat = group.maxRepeat;
+                this.class = group.canRepeat ? 'repeat-group' : '';
+            }
+
+            Group.prototype = {
+
+                serialize: function() {
+                    var self = this,
+                        data = {},
+                        key;
+                    $.each(this.repeats(), function(ridx, relm) {
+                        $.each(relm.questions, function(qidx, qelm) {
+                            key = self.canRepeat ?
+                                qelm.id + '-' + (ridx + 1) :
+                                qelm.id;
+                            // Set false-y values to "" so they aren't ignored
+                            // by jQuery.extend
+                            data[key] = qelm.value ? qelm.value : "";
+                        });
+                    });
+                    return data;
+                },
+
+                repeatAllowed: function() {
+                    return this.repeats().length < this.maxRepeat;
+                }
+
+            };
+
+
+            function Page(id, title, groups) {
+                this.id = id;
+                this.title = title;
+                this.groups = ko.utils.arrayMap(groups, function(group) {
+                    return new Group(group);
+                });
+            }
+
+            Page.prototype = {
+
+                serialize: function() {
+                    var data = {};
+                    $.each(this.groups, function(idx, value) {
+                        console.log(value.serialize());
+                        $.extend(data, value.serialize());
+                    });
+                    return data;
+                }
+
+            };
+
+            function ViewModel(schema, disable) {
+
+                var self = this;
+                var pages = schema.pages;
+
+                self.npages = pages.length;
+                self.pages = ko.utils.arrayMap(pages, function(page) {
+                    return new Page(page.id, page.title, page.groups);
+                });
+
+                self.currentIndex = ko.observable(0);
+                self.currentPage = ko.computed(function(){
+                   return self.pages[self.currentIndex()];
+                });
+                self.previous = function() {
+                    self.currentIndex(self.currentIndex()-1);
+                };
+                self.next = function() {
+                    self.currentIndex(self.currentIndex()+1);
+                };
+                self.isFirst = function() {
+                    return self.currentIndex() === 0;
+                };
+                self.isLast = function() {
+                    return self.currentIndex() === self.npages - 1;
+                };
+
+                self.disable = disable || false;
+
+                self.continueText = ko.observable('');
+                self.continueFlag = ko.computed(function() {
+                    return self.continueText() === 'continue';
+                });
+
+                self.addRepeatGroup = function(data) {
+                    data.repeats.push({
+                        id: data.repeats().length,
+                        class: 'repeat-subgroup',
+                        questions: clone(data._questions)
+                    });
+                };
+
+                self.removeRepeatGroup = function(data, idx) {
+                    data.repeats.splice(idx, 1);
+                };
+
+            }
+
+            ViewModel.prototype = {
+
+                serialize: function() {
+                    var data = {};
+                    $.each(this.pages, function(idx, value) {
+                        $.extend(data, value.serialize());
+                    });
+                    return data;
+                }
+
+            };
+        </script>
+
+    </head>
+
+    <body>
+
+        <div id="meta-data-container">
+
+            <div data-bind="with:currentPage">
+                <div data-bind="foreach:groups">
+                    <div data-bind="foreach:repeats, attr:{class:$data.class}">
+                        <div data-bind="foreach:questions, attr:{class:$data.class}">
+                            <div class="control-group">
+                                <label class="control-label" data-bind="text:$data.label, attr:{for:$data.id}"></label>
+                                <div class="controls">
+                                    <div data-bind='item:$data, attr:{id:$data.id}'></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div data-bind="if:$parent.canRepeat">
+                            <a data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}, clickBubble:false">Remove</a>
+                        </div>
+                    </div>
+                    <div data-bind="if:repeatAllowed()">
+                        <div>
+                            <a data-bind="click:$root.addRepeatGroup, clickBubble:false">Add</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="controls">
+                    <input type="submit" value="Submit" class="btn" />
+                    <a class="btn comment-cancel">Cancel</a>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div data-bind="visible:npages > 1">
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" data-bind="click:previous, disable:isFirst()">Previous</button>
+                        <span class="progress-meter" style="padding: 0px 10px 0px 10px;">
+                            Page <span data-bind="text:currentIndex() + 1"></span>
+                            of <span data-bind="text:npages"></span>
+                        </span>
+                        <button class="btn" data-bind="click:next, disable:isLast()">Next</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Apply Knockout bindings -->
+        <script type="text/javascript">
+
+            var viewModel = new ViewModel(schema.schema);
+            ko.applyBindings(
+                viewModel,
+                document.getElementById('meta-data-container')
+            );
+
+        </script>
+
+    </body>
+
+</html>
