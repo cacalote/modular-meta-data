@@ -27,6 +27,12 @@ schema = {
                                 'id': 'comments',
                                 'type': 'textarea',
                                 'label': 'Other Comments'
+                            },
+                            {
+                                'id': 'file',
+                                'type': 'file',
+                                'label': 'Add file',
+                                'caption': 'Please choose'
                             }
                         ]
                     },

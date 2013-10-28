@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+
 <html>
 
     <head>
@@ -19,8 +21,12 @@
         <script src="/modular-meta-data/schema.js"></script>
 
         <!-- Load libraries -->
+
+        <link rel="stylesheet" href="/modular-meta-data/assets/css/bootstrap.min.css" />
+
         <script src="/modular-meta-data/assets/js/knockout-3.0.0.js"></script>
         <script src="/modular-meta-data/assets/js/jquery-1.10.2.min.js"></script>
+        <!--<script src="/modular-meta-data/assets/js/bootstrap.min.js"></script>-->
 
         <script type="text/javascript">
 
@@ -44,16 +50,60 @@
             var templates = {
                 textarea: '<textarea data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id}, disable:disable"></textarea>',
                 textfield: '<input type="text" data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id}, disable:disable" />',
-                select: '<select data-bind="options: options, value:value, attr:{name:id}, optionsCaption: caption, disable:disable"></select>',
-                checkbox: '<input type="checkbox" data-bind="checked:value, attr:{name:id}, disable:disable" />'
+                select: '<select data-bind="options: options, value:value, attr:{name:id}, optionsCaption:caption, disable:disable"></select>',
+                checkbox: '<input type="checkbox" data-bind="checked:value, attr:{name:id}, disable:disable" />',
+                file: '<select data-bind="value:node, options:nodes, optionsCaption:caption"></select>' +
+                      '<select data-bind="visible:files, value:value, options:files, optionsCaption:caption"></select>'
             };
+
+            function QuestionViewModel(values, parentViewModel) {
+
+                var self = this;
+
+                self.value = ko.observable(values.value || '');
+                self.disable = ko.observable(values.disable || parentViewModel.disable);
+
+                self.id = values.id;
+                self.caption = values.caption;
+                self.options = values.options;
+
+                self.node = ko.observable();
+                self.nodes = parentViewModel.nodes;
+
+                self._refresh = ko.observable();
+                self.files = ko.computed(function() {
+                    self._refresh();
+                    var node = self.node();
+                    if (node) {
+                        if (node in parentViewModel.files) {
+                            return parentViewModel.files[node];
+                        }
+                        $.getJSON(
+                            '/modular-meta-data/data/' + node + '.json',
+                            function(response) {
+                                parentViewModel.files[node] = response.files;
+                                self._refresh(Math.random());
+                            }
+                        );
+                    }
+                });
+
+            }
 
             ko.bindingHandlers.item = {
                 init: function(element, valueAccessor, allBindingsAccessor, viewModel, bindingContext) {
-                    var options = ko.utils.unwrapObservable(valueAccessor());
-                    options.value = options.value || '';
-                    options.disable = options.disable || bindingContext.$root.disable;
-                    ko.renderTemplate(templates[options.type], options, { templateEngine: stringTemplateEngine }, element, 'replaceNode');
+                    var values = ko.utils.unwrapObservable(valueAccessor());
+                    questionViewModel = new QuestionViewModel(
+                        values,
+                        bindingContext.$root
+                    );
+                    ko.renderTemplate(
+                        templates[values.type],
+                        questionViewModel,
+                        { templateEngine: stringTemplateEngine },
+                        element,
+                        'replaceNode'
+                    );
                 }
             };
 
@@ -121,6 +171,9 @@
                 var self = this;
                 var pages = schema.pages;
 
+                self.nodes = ['node1', 'node2', 'node3'];
+                self.files = {};
+
                 self.npages = pages.length;
                 self.pages = ko.utils.arrayMap(pages, function(page) {
                     return new Page(page.id, page.title, page.groups);
@@ -179,7 +232,7 @@
 
     </head>
 
-    <body>
+    <body class="container">
 
         <div id="meta-data-container">
 
@@ -195,12 +248,12 @@
                             </div>
                         </div>
                         <div data-bind="if:$parent.canRepeat">
-                            <a data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}, clickBubble:false">Remove</a>
+                            <a class="btn btn-danger remove-repeat-group" data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}">- Remove</a>
                         </div>
                     </div>
                     <div data-bind="if:repeatAllowed()">
                         <div>
-                            <a data-bind="click:$root.addRepeatGroup, clickBubble:false">Add</a>
+                            <a class="btn btn-success add-repeat-group" data-bind="click:$root.addRepeatGroup">+ Add</a>
                         </div>
                     </div>
                 </div>
