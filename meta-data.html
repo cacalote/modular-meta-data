@@ -7,19 +7,22 @@
         <style>
 
             .repeat-group {
-                border: 1px;
-                border-style: solid;
+                margin-bottom: 25px;
             }
 
             .repeat-subgroup {
-                border: 1px;
-                border-style: dashed;
+                margin-bottom: 15px;
+                margin-left: 25px;
+            }
+
+            .required {
+                color: red;
             }
 
         </style>
 
         <!-- Load schema data -->
-        <script src="/modular-meta-data/schema.js"></script>
+        <script src="/modular-meta-data/schema-aea.js"></script>
 
         <!-- Load libraries -->
 
@@ -49,11 +52,22 @@
             };
 
             var templates = {
-                textarea: '<textarea data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id}, disable:disable"></textarea>',
-                textfield: '<input type="text" data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id}, disable:disable" />',
-                select: '<select data-bind="options: options, value:value, attr:{name:id}, optionsCaption:caption, disable:disable"></select>',
-                checkbox: '<input type="checkbox" data-bind="checked:value, attr:{name:id}, disable:disable" />',
-                file: '<select data-bind="value:node, options:nodes, optionsCaption:caption"></select>' +
+                textarea: '<textarea data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id, id:key}, disable:disable"></textarea>',
+                textfield: '<input type="text" data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id, id:key}, disable:disable" />',
+                select: '<select data-bind="options: options, value:value, attr:{name:id, id:key}, optionsCaption:caption, disable:disable"></select>',
+                radio: '<div data-bind="foreach:options">' +
+                            '<div>' +
+                                '<input type="radio" data-bind="checkedValue:$data, checked:$root.value, disable:$root.disable" />' +
+                                '<span data-bind="text:$data"></span>' +
+                            '</div>' +
+                        '</div>',
+                checkbox: '<div data-bind="foreach:options">' +
+                            '<div>' +
+                                '<input type="checkbox" data-bind="checkedValue:$data, checked:$root.value, disable:$root.disable" />' +
+                                '<span data-bind="text:$data"></span>' +
+                            '</div>' +
+                        '</div>',
+                file: '<select data-bind="value:node, options:nodes, optionsCaption:caption, disable:disable"></select>' +
                       '<select data-bind="visible:files, value:value, options:files, optionsCaption:caption"></select>'
             };
 
@@ -61,23 +75,31 @@
 
                 var self = this;
 
-                self.value = ko.observable(values.value || '');
+                if (values.type == 'checkbox') {
+                    self.value = ko.observableArray(values.value || []);
+                } else {
+                    self.value = ko.observable(values.value || '');
+                }
                 self.disable = ko.observable(values.disable || $root.disable);
 
                 self.id = values.id;
+                self.type = values.type;
+                self.label = values.label;
                 self.caption = values.caption;
                 self.options = values.options;
+                self.required = values.required;
+                self.helpText = values.helpText;
 
                 self.node = ko.observable();
                 self.nodes = $root.nodes;
 
-                var key = values.id + (
+                self.key = values.id + (
                     parentIdx != null ?
                         '-' + parentIdx :
                         ''
                 );
-                if (!(key in $root._questions)) {
-                    $root._questions[key] = self
+                if (!(self.key in $root._questions)) {
+                    $root._questions[self.key] = self
                 }
 
                 self._refresh = ko.observable();
@@ -102,15 +124,10 @@
 
             ko.bindingHandlers.item = {
                 init: function(element, valueAccessor, allBindingsAccessor, viewModel, bindingContext) {
-                    var values = ko.utils.unwrapObservable(valueAccessor());
-                    questionViewModel = new QuestionViewModel(
-                        values,
-                        bindingContext.$root,
-                        bindingContext.$parent.idx
-                    );
+                    var model = ko.utils.unwrapObservable(valueAccessor());
                     ko.renderTemplate(
-                        templates[values.type],
-                        questionViewModel,
+                        templates[model.type],
+                        model,
                         { templateEngine: stringTemplateEngine },
                         element,
                         'replaceNode'
@@ -123,12 +140,16 @@
                 var self = this;
                 self.$root = $root;
 
+                $.each(group.questions, function(qidx, question) {
+                    question.required = question.required || false;
+                });
                 self._questions = clone(group.questions);
 
                 self.canRepeat = group.canRepeat || false;
                 self.maxRepeat = group.maxRepeat || null;
                 self.minRepeat = group.minRepeat || 0;
                 self.initRepeat = group.initRepeat || 1;
+                self.repeatLabel = group.repeatLabel || group.id;
 
                 self.repeats = ko.observableArray([]);
                 for (var idx = 0; idx < self.initRepeat; idx++) {
@@ -147,7 +168,7 @@
                         self.repeats().length - 1 >= self.minRepeat;
                 });
 
-                self.class = group.canRepeat ? 'repeat-group' : '';
+                self.klass = group.canRepeat ? 'repeat-group' : '';
 
                 self.displayRules = group.displayRules;
                 self.visible = ko.computed(function() {
@@ -208,15 +229,34 @@
                     return self.continueText() === 'continue';
                 });
 
+                self.addRepeatText = function(data) {
+                    var determiner = data.repeats().length == 0 ?
+                            'a' : 'another';
+                    return 'Add ' + determiner + ' ' + data.repeatLabel;
+                };
+
+                self.removeRepeatText = function(data) {
+                    return 'Remove this ' + data.repeatLabel;
+                };
+
                 self.addRepeatGroup = function(data) {
-                    data.repeats.push({
-                        idx: data.canRepeat ?
-                                data.repeats().length :
-                                null,
-                        class: 'repeat-subgroup',
-                        questions: clone(data._questions)
+
+                    if (data.canRepeat) {
+                        var idx = data.repeats().length;
+                        var klass = 'repeat-subgroup';
+                    } else {
+                        var idx = null;
+                        var klass = null;
+                    }
+                    var models = $.map(clone(data._questions), function(question) {
+                        return new QuestionViewModel(question, self, idx);
                     });
-                    self._refresh(Math.random());
+                    data.repeats.push({
+                        idx: idx,
+                        klass: klass,
+                        questions: models//clone(data._questions)
+                    });
+                    self.refresh();
                 };
 
                 self.removeRepeatGroup = function(data, idx) {
@@ -235,7 +275,7 @@
                         var key = data._questions[qidx].id + '-' + (repeats.length);
                         delete self._questions[key];
                     }
-                    self._refresh(Math.random());
+                    self.refresh();
                 };
 
                 self.npages = pages.length;
@@ -262,12 +302,18 @@
 
             ViewModel.prototype = {
 
+                refresh: function() {
+                    this._refresh(Math.random());
+                },
+
                 previous: function() {
-                    this.currentIndex(this.currentIndex()-1);
+                    this.currentIndex(this.currentIndex() - 1);
+                    this.refresh();
                 },
 
                 next: function() {
-                    this.currentIndex(this.currentIndex()+1);
+                    this.currentIndex(this.currentIndex() + 1);
+                    this.refresh();
                 },
 
                 afterRender: function() {
@@ -278,8 +324,19 @@
                         });
                     });
 
-                    this._refresh(Math.random());
+                    this.refresh();
 
+                },
+
+                complete: function() {
+                    var complete = true;
+                    $.each(this._questions, function(key, value) {
+                        if (value.required && !value.value()) {
+                            complete = false;
+                            return false;
+                        }
+                    });
+                    return complete;
                 },
 
                 serialize: function() {
@@ -288,6 +345,14 @@
                         result[key] = value.value() || "";
                     });
                     return result;
+                },
+
+                submit: function() {
+                    if (!this.complete()) {
+                        alert('Survey not complete!');
+                    } else {
+                        alert('Submitting data: ' + JSON.stringify(this.serialize()));
+                    }
                 }
 
             };
@@ -300,37 +365,41 @@
 
         <div id="meta-data-container">
 
-            <div data-bind="with:currentPage">
+            <form class="form" data-bind="with:currentPage">
+                <h2 data-bind="text:title"></h2>
                 <div data-bind="foreach:groups">
                     <div data-bind="if:visible">
-                        <div data-bind="foreach:repeats, attr:{class:$data.class}">
-                            <div data-bind="foreach:questions, attr:{class:$data.class}">
-                                <div class="control-group">
-                                    <label class="control-label" data-bind="text:label, attr:{for:id}"></label>
-                                    <div class="controls">
-                                        <div data-bind='item:$data, attr:{id:id}'></div>
+                        <div data-bind="attr:{class:$data.klass}">
+                            <div data-bind="foreach:repeats">
+                                <div data-bind="attr:{class:klass}">
+                                    <div data-bind="foreach:questions">
+                                        <div class="control-group">
+                                            <label class="control-label" data-bind="css:{required:required}">
+                                                <span data-bind="if:required">* </span>
+                                                <span data-bind="text:label, attr:{for:key}"></span>
+                                            </label>
+                                            <div class="controls">
+                                                <span class="help-block" data-bind="text:helpText"></span>
+                                                <div data-bind='item:$data, attr:{id:id}'></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div data-bind="if:$parent.canRemove">
+                                        <a class="btn btn-danger remove-repeat-group" data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}, text:$root.removeRepeatText($parent)"></a>
                                     </div>
                                 </div>
                             </div>
-                            <div data-bind="if:$parent.canRemove">
-                                <a class="btn btn-danger remove-repeat-group" data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}">- Remove</a>
-                            </div>
-                        </div>
-                        <div data-bind="if:canAdd">
-                            <div>
-                                <a class="btn btn-success add-repeat-group" data-bind="click:$root.addRepeatGroup">+ Add</a>
+                            <div data-bind="if:canAdd">
+                                <div>
+                                    <a class="btn btn-success add-repeat-group" data-bind="click:$root.addRepeatGroup, text:$root.addRepeatText($data)"></a>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </form>
 
-            <div class="control-group">
-                <div class="controls">
-                    <input type="submit" value="Submit" class="btn" />
-                    <a class="btn comment-cancel">Cancel</a>
-                </div>
-            </div>
+            <hr />
 
             <!-- Pagination -->
             <div data-bind="visible:npages > 1">
@@ -343,6 +412,16 @@
                         </span>
                         <button class="btn" data-bind="click:next, disable:isLast">Next</button>
                     </div>
+                </div>
+            </div>
+
+            <hr />
+
+            <!-- Submission -->
+            <div class="control-group">
+                <div class="controls">
+                    <input type="submit" value="Submit" class="btn" data-bind="click:submit" />
+                    <a class="btn comment-cancel">Cancel</a>
                 </div>
             </div>
 

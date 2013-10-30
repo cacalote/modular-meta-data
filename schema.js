@@ -63,8 +63,9 @@ schema = {
                             'id': 'yesno',
                             'type': 'select',
                             'label': 'foo',
-                            'caption': 'bar',
-                            'options': ['No', 'Yes']
+                            'caption': '',
+                            'options': ['No', 'Yes'],
+                            'required': true,
                         },
                         {
                             'id': 'file',
