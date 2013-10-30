@@ -17,6 +17,7 @@
             }
 
         </style>
+
         <!-- Load schema data -->
         <script src="/modular-meta-data/schema.js"></script>
 
@@ -56,32 +57,41 @@
                       '<select data-bind="visible:files, value:value, options:files, optionsCaption:caption"></select>'
             };
 
-            function QuestionViewModel(values, parentViewModel) {
+            function QuestionViewModel(values, $root, parentIdx) {
 
                 var self = this;
 
                 self.value = ko.observable(values.value || '');
-                self.disable = ko.observable(values.disable || parentViewModel.disable);
+                self.disable = ko.observable(values.disable || $root.disable);
 
                 self.id = values.id;
                 self.caption = values.caption;
                 self.options = values.options;
 
                 self.node = ko.observable();
-                self.nodes = parentViewModel.nodes;
+                self.nodes = $root.nodes;
+
+                var key = values.id + (
+                    parentIdx != null ?
+                        '-' + parentIdx :
+                        ''
+                );
+                if (!(key in $root._questions)) {
+                    $root._questions[key] = self
+                }
 
                 self._refresh = ko.observable();
                 self.files = ko.computed(function() {
                     self._refresh();
                     var node = self.node();
                     if (node) {
-                        if (node in parentViewModel.files) {
-                            return parentViewModel.files[node];
+                        if (node in $root.files) {
+                            return $root.files[node];
                         }
                         $.getJSON(
                             '/modular-meta-data/data/' + node + '.json',
                             function(response) {
-                                parentViewModel.files[node] = response.files;
+                                $root.files[node] = response.files;
                                 self._refresh(Math.random());
                             }
                         );
@@ -95,7 +105,8 @@
                     var values = ko.utils.unwrapObservable(valueAccessor());
                     questionViewModel = new QuestionViewModel(
                         values,
-                        bindingContext.$root
+                        bindingContext.$root,
+                        bindingContext.$parent.idx
                     );
                     ko.renderTemplate(
                         templates[values.type],
@@ -107,94 +118,88 @@
                 }
             };
 
-            function Group(group) {
-                this._questions = clone(group.questions);
-                this.repeats = ko.observableArray([{
-                    idx: 0,
-                    class: group.canRepeat ? 'repeat-subgroup' : '',
-                    questions: group.questions
-                }]);
-                this.canRepeat = group.canRepeat;
-                this.maxRepeat = group.maxRepeat;
-                this.class = group.canRepeat ? 'repeat-group' : '';
+            function Group(group, $root) {
+
+                var self = this;
+                self.$root = $root;
+
+                self._questions = clone(group.questions);
+
+                self.canRepeat = group.canRepeat || false;
+                self.maxRepeat = group.maxRepeat || null;
+                self.minRepeat = group.minRepeat || 0;
+                self.initRepeat = group.initRepeat || 1;
+
+                self.repeats = ko.observableArray([]);
+                for (var idx = 0; idx < self.initRepeat; idx++) {
+                    $root.addRepeatGroup(self);
+                }
+
+                self.canAdd = ko.computed(function() {
+                    return self.canRepeat && (
+                        !self.maxRepeat ||
+                            self.repeats().length < self.maxRepeat
+                    );
+                });
+
+                self.canRemove = ko.computed(function() {
+                    return self.canRepeat &&
+                        self.repeats().length - 1 >= self.minRepeat;
+                });
+
+                self.class = group.canRepeat ? 'repeat-group' : '';
+
+                self.displayRules = group.displayRules;
+                self.visible = ko.computed(function() {
+                    self.$root._refresh();
+                    return typeof(self._visible) == 'undefined' ?
+                        true :
+                        self._visible()
+                });
+
             }
 
             Group.prototype = {
 
-                serialize: function() {
-                    var self = this,
-                        data = {},
-                        key;
-                    $.each(this.repeats(), function(ridx, relm) {
-                        $.each(relm.questions, function(qidx, qelm) {
-                            key = self.canRepeat ?
-                                qelm.id + '-' + (ridx + 1) :
-                                qelm.id;
-                            // Set false-y values to "" so they aren't ignored
-                            // by jQuery.extend
-                            data[key] = qelm.value ? qelm.value : "";
-                        });
-                    });
-                    return data;
-                },
+                afterRender: function() {
 
-                repeatAllowed: function() {
-                    return this.repeats().length < this.maxRepeat;
+                    var self = this;
+
+                    self._visible = ko.computed(function() {
+                        self.$root._refresh();
+                        var _visible = true;
+                        $.each(self.displayRules || {}, function(key, value) {
+                            var model = self.$root._questions[key];
+                            var modelValue = model ? model.value() : null;
+                            if (modelValue != value) {
+                                _visible = false;
+                                return false;
+                            }
+                        });
+                        return _visible;
+                    });
                 }
 
             };
 
-
-            function Page(id, title, groups) {
+            function Page(id, title, groups, $root) {
                 this.id = id;
                 this.title = title;
                 this.groups = ko.utils.arrayMap(groups, function(group) {
-                    return new Group(group);
+                    return new Group(group, $root);
                 });
             }
-
-            Page.prototype = {
-
-                serialize: function() {
-                    var data = {};
-                    $.each(this.groups, function(idx, value) {
-                        console.log(value.serialize());
-                        $.extend(data, value.serialize());
-                    });
-                    return data;
-                }
-
-            };
 
             function ViewModel(schema, disable) {
 
                 var self = this;
                 var pages = schema.pages;
 
+                self._refresh = ko.observable();
+                self._questions = {};
+
                 self.nodes = ['node1', 'node2', 'node3'];
                 self.files = {};
-
-                self.npages = pages.length;
-                self.pages = ko.utils.arrayMap(pages, function(page) {
-                    return new Page(page.id, page.title, page.groups);
-                });
-
-                self.currentIndex = ko.observable(0);
-                self.currentPage = ko.computed(function(){
-                   return self.pages[self.currentIndex()];
-                });
-                self.previous = function() {
-                    self.currentIndex(self.currentIndex()-1);
-                };
-                self.next = function() {
-                    self.currentIndex(self.currentIndex()+1);
-                };
-                self.isFirst = function() {
-                    return self.currentIndex() === 0;
-                };
-                self.isLast = function() {
-                    return self.currentIndex() === self.npages - 1;
-                };
 
                 self.disable = disable || false;
 
@@ -205,29 +210,88 @@
 
                 self.addRepeatGroup = function(data) {
                     data.repeats.push({
-                        id: data.repeats().length,
+                        idx: data.canRepeat ?
+                                data.repeats().length :
+                                null,
                         class: 'repeat-subgroup',
                         questions: clone(data._questions)
                     });
+                    self._refresh(Math.random());
                 };
 
                 self.removeRepeatGroup = function(data, idx) {
+                    var repeats = data.repeats();
                     data.repeats.splice(idx, 1);
+                    for (var ridx = idx; ridx < repeats.length; ridx++) {
+                        repeats[ridx].idx--;
+                        for (var qidx = 0; qidx < data._questions.length; qidx++) {
+                            var id = data._questions[qidx].id;
+                            var keyOld = id + '-' + (ridx + 1),
+                                keyNew = id + '-' + ridx;
+                            self._questions[keyNew] = self._questions[keyOld]
+                        }
+                    }
+                    for (var qidx = 0; qidx < data._questions.length; qidx++) {
+                        var key = data._questions[qidx].id + '-' + (repeats.length);
+                        delete self._questions[key];
+                    }
+                    self._refresh(Math.random());
                 };
+
+                self.npages = pages.length;
+
+                self.pages = ko.utils.arrayMap(pages, function(page) {
+                    return new Page(page.id, page.title, page.groups, self);
+                });
+
+                self.currentIndex = ko.observable(0);
+
+                self.currentPage = ko.computed(function(){
+                   return self.pages[self.currentIndex()];
+                });
+
+                self.isFirst = ko.computed(function() {
+                    return self.currentIndex() === 0;
+                });
+
+                self.isLast = ko.computed(function() {
+                    return self.currentIndex() === self.npages - 1;
+                });
 
             }
 
             ViewModel.prototype = {
 
-                serialize: function() {
-                    var data = {};
-                    $.each(this.pages, function(idx, value) {
-                        $.extend(data, value.serialize());
+                previous: function() {
+                    this.currentIndex(this.currentIndex()-1);
+                },
+
+                next: function() {
+                    this.currentIndex(this.currentIndex()+1);
+                },
+
+                afterRender: function() {
+
+                    $.each(this.pages, function(pidx, page) {
+                        $.each(page.groups, function(gidx, group) {
+                            group.afterRender();
+                        });
                     });
-                    return data;
+
+                    this._refresh(Math.random());
+
+                },
+
+                serialize: function() {
+                    var result = {};
+                    $.each(this._questions, function(key, value) {
+                        result[key] = value.value() || "";
+                    });
+                    return result;
                 }
 
             };
+
         </script>
 
     </head>
@@ -238,22 +302,24 @@
 
             <div data-bind="with:currentPage">
                 <div data-bind="foreach:groups">
-                    <div data-bind="foreach:repeats, attr:{class:$data.class}">
-                        <div data-bind="foreach:questions, attr:{class:$data.class}">
-                            <div class="control-group">
-                                <label class="control-label" data-bind="text:$data.label, attr:{for:$data.id}"></label>
-                                <div class="controls">
-                                    <div data-bind='item:$data, attr:{id:$data.id}'></div>
+                    <div data-bind="if:visible">
+                        <div data-bind="foreach:repeats, attr:{class:$data.class}">
+                            <div data-bind="foreach:questions, attr:{class:$data.class}">
+                                <div class="control-group">
+                                    <label class="control-label" data-bind="text:label, attr:{for:id}"></label>
+                                    <div class="controls">
+                                        <div data-bind='item:$data, attr:{id:id}'></div>
+                                    </div>
                                 </div>
                             </div>
+                            <div data-bind="if:$parent.canRemove">
+                                <a class="btn btn-danger remove-repeat-group" data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}">- Remove</a>
+                            </div>
                         </div>
-                        <div data-bind="if:$parent.canRepeat">
-                            <a class="btn btn-danger remove-repeat-group" data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}">- Remove</a>
-                        </div>
-                    </div>
-                    <div data-bind="if:repeatAllowed()">
-                        <div>
-                            <a class="btn btn-success add-repeat-group" data-bind="click:$root.addRepeatGroup">+ Add</a>
+                        <div data-bind="if:canAdd">
+                            <div>
+                                <a class="btn btn-success add-repeat-group" data-bind="click:$root.addRepeatGroup">+ Add</a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -270,12 +336,12 @@
             <div data-bind="visible:npages > 1">
                 <div class="control-group">
                     <div class="controls">
-                        <button class="btn" data-bind="click:previous, disable:isFirst()">Previous</button>
+                        <button class="btn" data-bind="click:previous, disable:isFirst">Previous</button>
                         <span class="progress-meter" style="padding: 0px 10px 0px 10px;">
                             Page <span data-bind="text:currentIndex() + 1"></span>
                             of <span data-bind="text:npages"></span>
                         </span>
-                        <button class="btn" data-bind="click:next, disable:isLast()">Next</button>
+                        <button class="btn" data-bind="click:next, disable:isLast">Next</button>
                     </div>
                 </div>
             </div>
@@ -285,11 +351,12 @@
         <!-- Apply Knockout bindings -->
         <script type="text/javascript">
 
-            var viewModel = new ViewModel(schema.schema);
+            var viewModel = new ViewModel(schema);
             ko.applyBindings(
                 viewModel,
                 document.getElementById('meta-data-container')
             );
+            viewModel.afterRender();
 
         </script>
 
