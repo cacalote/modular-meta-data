@@ -6,11 +6,15 @@
 
         <style>
 
-            .repeat-group {
+            .repeat-section {
                 margin-bottom: 25px;
+                margin-left: 25px;
+                border: 1px;
+                border-style: solid;
             }
 
-            .repeat-subgroup {
+            .repeat-subsection {
+                background: grey;
                 margin-bottom: 15px;
                 margin-left: 25px;
             }
@@ -22,7 +26,7 @@
         </style>
 
         <!-- Load schema data -->
-        <script src="/modular-meta-data/schema-aea.js"></script>
+        <script src="/modular-meta-data/schema.js"></script>
 
         <!-- Load libraries -->
 
@@ -30,13 +34,36 @@
 
         <script src="/modular-meta-data/assets/js/knockout-3.0.0.js"></script>
         <script src="/modular-meta-data/assets/js/jquery-1.10.2.min.js"></script>
-        <!--<script src="/modular-meta-data/assets/js/bootstrap.min.js"></script>-->
+
+        <script id="section" type="text/html">
+            <h2 data-bind="text:title"></h2>
+            <div data-bind="foreach:contents">
+                <div class="content" data-bind="css:{'repeat-section':$data.repeatSection, 'repeat-subsection':$parent.repeatSection}">
+                    <div data-bind="template:{name:$root.getTemplate($data), if:$data.visible()}"></div>
+                    <div data-bind="if:$root.showRemove($data)">
+                        <a class="btn" data-bind="click:$data.removeRepeat">Remove</a>
+                    </div>
+                </div>
+            </div>
+            <div data-bind="if:$root.showAdd($data)">
+                <a class="btn" data-bind="click:addRepeat">Add</a>
+            </div>
+        </script>
+
+        <script id="question" type="text/html">
+            <div class="control-group">
+                <label class="control-label" data-bind="css:{required:required}">
+                    <span data-bind="if:required">* </span>
+                    <span data-bind="text:label, attr:{for:id}"></span>
+                </label>
+                <div class="controls">
+                    <span class="help-block" data-bind="text:helpText"></span>
+                    <div data-bind='item:$data, attr:{id:id}'></div>
+                </div>
+            </div>
+        </script>
 
         <script type="text/javascript">
-
-            clone = function(data) {
-                return JSON.parse(JSON.stringify(data));
-            };
 
             var stringTemplateSource = function (template) {
                 this.template = template;
@@ -51,10 +78,11 @@
                 return new stringTemplateSource(template);
             };
 
+            // todo: convert to html templates
             var templates = {
-                textarea: '<textarea data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id, id:key}, disable:disable"></textarea>',
-                textfield: '<input type="text" data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id, id:key}, disable:disable" />',
-                select: '<select data-bind="options: options, value:value, attr:{name:id, id:key}, optionsCaption:caption, disable:disable"></select>',
+                textarea: '<textarea data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id, id:id}, disable:disable"></textarea>',
+                textfield: '<input type="text" data-bind="value:value, valueUpdate:\'afterkeydown\', attr:{name:id, id:id}, disable:disable" />',
+                select: '<select data-bind="options: options, value:value, attr:{name:id, id:id}, optionsCaption:caption, disable:disable"></select>',
                 radio: '<div data-bind="foreach:options">' +
                             '<div>' +
                                 '<input type="radio" data-bind="checkedValue:$data, checked:$root.value, disable:$root.disable" />' +
@@ -71,57 +99,6 @@
                       '<select data-bind="visible:files, value:value, options:files, optionsCaption:caption"></select>'
             };
 
-            function QuestionViewModel(values, $root, parentIdx) {
-
-                var self = this;
-
-                if (values.type == 'checkbox') {
-                    self.value = ko.observableArray(values.value || []);
-                } else {
-                    self.value = ko.observable(values.value || '');
-                }
-                self.disable = ko.observable(values.disable || $root.disable);
-
-                self.id = values.id;
-                self.type = values.type;
-                self.label = values.label;
-                self.caption = values.caption;
-                self.options = values.options;
-                self.required = values.required;
-                self.helpText = values.helpText;
-
-                self.node = ko.observable();
-                self.nodes = $root.nodes;
-
-                self.key = values.id + (
-                    parentIdx != null ?
-                        '-' + parentIdx :
-                        ''
-                );
-                if (!(self.key in $root._questions)) {
-                    $root._questions[self.key] = self
-                }
-
-                self._refresh = ko.observable();
-                self.files = ko.computed(function() {
-                    self._refresh();
-                    var node = self.node();
-                    if (node) {
-                        if (node in $root.files) {
-                            return $root.files[node];
-                        }
-                        $.getJSON(
-                            '/modular-meta-data/data/' + node + '.json',
-                            function(response) {
-                                $root.files[node] = response.files;
-                                self._refresh(Math.random());
-                            }
-                        );
-                    }
-                });
-
-            }
-
             ko.bindingHandlers.item = {
                 init: function(element, valueAccessor, allBindingsAccessor, viewModel, bindingContext) {
                     var model = ko.utils.unwrapObservable(valueAccessor());
@@ -135,154 +112,204 @@
                 }
             };
 
-            function Group(group, $root) {
+            function Content(content, $parent, $root) {
 
                 var self = this;
+
+                self.$parent = $parent;
                 self.$root = $root;
 
-                $.each(group.questions, function(qidx, question) {
-                    question.required = question.required || false;
-                });
-                self._questions = clone(group.questions);
+                $.extend(self, content);
 
-                self.canRepeat = group.canRepeat || false;
-                self.maxRepeat = group.maxRepeat || null;
-                self.minRepeat = group.minRepeat || 0;
-                self.initRepeat = group.initRepeat || 1;
-                self.repeatLabel = group.repeatLabel || group.id;
-
-                self.repeats = ko.observableArray([]);
-                for (var idx = 0; idx < self.initRepeat; idx++) {
-                    $root.addRepeatGroup(self);
+                if ('contents' in self) {
+                    self.contents = ko.observableArray(
+                        $.map(self.contents, function(content) {
+                            return new Content(content, self, $root);
+                        })
+                    );
                 }
 
-                self.canAdd = ko.computed(function() {
-                    return self.canRepeat && (
-                        !self.maxRepeat ||
-                            self.repeats().length < self.maxRepeat
-                    );
-                });
+                // Impute defaults
+                self.displayRules = self.displayRules || {};
+                self.canRepeat = self.canRepeat || false;
+                self.minRepeat = typeof(self.minRepeat) != 'undefined' ? self.minRepeat : 1;
+                self.maxRepeat = self.maxRepeat || null;
 
-                self.canRemove = ko.computed(function() {
-                    return self.canRepeat &&
-                        self.repeats().length - 1 >= self.minRepeat;
-                });
+                if (self.contentType == 'question') {
 
-                self.klass = group.canRepeat ? 'repeat-group' : '';
+                    self.idx = null;
+                    self.prevIdx = null;
 
-                self.displayRules = group.displayRules;
+                    // Set up observable on value
+                    self.value = ko.observable(self.value || '');
+
+                    // Impute question-level defaults
+                    self.required = self.required || false;
+                    self.disable = self.disable || false;
+                    self.helpText = self.helpText || '';
+
+                } else {
+
+                    self.observedData = {};
+
+                }
+
                 self.visible = ko.computed(function() {
                     self.$root._refresh();
-                    return typeof(self._visible) == 'undefined' ?
-                        true :
-                        self._visible()
+                    var _visible = true;
+                    $.each(self.displayRules, function(key, value) {
+//                        var model = self.$root.observedData[key];
+                        var model = self.getKey(key);
+                        var modelValue = model ? model.value() : null;
+                        if (modelValue != value) {
+                            _visible = false;
+                            return false;
+                        }
+                    });
+                    return _visible;
                 });
+
+                $root.refresh();
 
             }
 
-            Group.prototype = {
+            Content.prototype = {
 
-                afterRender: function() {
+                getKey: function(key) {
+                    console.log('in getkey');
+                    var child = this;
+                    while (child.$parent) {
+                        child = child.$parent;
+                        if (child.observedData && key in child.observedData) {
+                            return child.observedData[key];
+                        }
+                    }
+                    return this.$root.observedData[key];
+                },
 
-                    var self = this;
+                getIdx: function() {
+                    return this.$parent.contents.indexOf(this);
+                },
 
-                    self._visible = ko.computed(function() {
-                        self.$root._refresh();
-                        var _visible = true;
-                        $.each(self.displayRules || {}, function(key, value) {
-                            var model = self.$root._questions[key];
-                            var modelValue = model ? model.value() : null;
-                            if (modelValue != value) {
-                                _visible = false;
-                                return false;
-                            }
+                updateIdx: function(action) {
+
+                    var idx = [],
+                        child = this,
+                        key;
+
+                    if (this.contents) {
+                        $.each(this.contents(), function(idx, content) {
+                            content.updateIdx(action);
                         });
-                        return _visible;
-                    });
+                    } else {
+                        while (child.$parent) {
+                            if (child.$parent.repeatSection) {
+                                idx.unshift(child.getIdx());
+                            }
+                            if (child.$parent.observedData) {
+                                if (idx.length) {
+                                    key = this.id + '-' + idx.join('-');
+                                } else {
+                                    key = this.id;
+                                }
+                                if (action == 'add') {
+                                    child.$parent.observedData[key] = this;
+                                } else if (action == 'remove') {
+                                    delete child.$parent.observedData[key];
+                                }
+                            }
+                            child = child.$parent;
+                        }
+                        key = idx.length ? this.id + '-' + idx.join('-') :
+                                this.id;
+                        if (action == 'add') {
+                            this.$root.observedData[key] = this;
+                        } else if (action == 'remove') {
+                            delete this.$root.observedData[key];
+                        }
+                    }
+
+                    this.$root.refresh();
+
+                },
+                addRepeat: function() {
+                    content = new Content(this._template, this, this.$root);
+                    this.contents.push(content);
+                    content.updateIdx('add');
+                },
+
+                removeRepeat: function() {
+                    this.$parent.updateIdx('remove');
+                    var parentIdx = this.getIdx();
+                    this.$parent.contents.splice(parentIdx, 1);
+                    this.$parent.updateIdx('add');
+                },
+
+                repeatCount: function() {
+                    return this.contents ? this.contents().length : 0;
                 }
 
             };
 
-            function Page(id, title, groups, $root) {
-                this.id = id;
-                this.title = title;
-                this.groups = ko.utils.arrayMap(groups, function(group) {
-                    return new Group(group, $root);
+            function Page(id, title, contents, $root) {
+
+                var self = this;
+
+                self.id = id;
+                self.title = title;
+                self.contents = ko.observableArray(
+                    $.map(contents, function(content) {
+                        return new Content(content, self, $root);
+                    })
+                );
+
+            }
+
+            function preprocess(content) {
+
+                if (!content.contents)
+                    return
+
+                $.each(content.contents, function(idx, _content) {
+
+                    preprocess(_content);
+
+                    if (_content.canRepeat) {
+                        content.contents[idx] =
+                            {
+                                contentType: 'section',
+                                title: null,
+                                repeatSection: true,
+                                _template: _content,
+                                contents: [_content]
+                            }
+
+                    }
+
                 });
+
             }
 
             function ViewModel(schema, disable) {
 
                 var self = this;
-                var pages = schema.pages;
 
                 self._refresh = ko.observable();
-                self._questions = {};
-
-                self.nodes = ['node1', 'node2', 'node3'];
-                self.files = {};
 
                 self.disable = disable || false;
+
+                self.observedData = {};
 
                 self.continueText = ko.observable('');
                 self.continueFlag = ko.computed(function() {
                     return self.continueText() === 'continue';
                 });
 
-                self.addRepeatText = function(data) {
-                    var determiner = data.repeats().length == 0 ?
-                            'a' : 'another';
-                    return 'Add ' + determiner + ' ' + data.repeatLabel;
-                };
-
-                self.removeRepeatText = function(data) {
-                    return 'Remove this ' + data.repeatLabel;
-                };
-
-                self.addRepeatGroup = function(data) {
-
-                    if (data.canRepeat) {
-                        var idx = data.repeats().length;
-                        var klass = 'repeat-subgroup';
-                    } else {
-                        var idx = null;
-                        var klass = null;
-                    }
-                    var models = $.map(clone(data._questions), function(question) {
-                        return new QuestionViewModel(question, self, idx);
-                    });
-                    data.repeats.push({
-                        idx: idx,
-                        klass: klass,
-                        questions: models//clone(data._questions)
-                    });
-                    self.refresh();
-                };
-
-                self.removeRepeatGroup = function(data, idx) {
-                    var repeats = data.repeats();
-                    data.repeats.splice(idx, 1);
-                    for (var ridx = idx; ridx < repeats.length; ridx++) {
-                        repeats[ridx].idx--;
-                        for (var qidx = 0; qidx < data._questions.length; qidx++) {
-                            var id = data._questions[qidx].id;
-                            var keyOld = id + '-' + (ridx + 1),
-                                keyNew = id + '-' + ridx;
-                            self._questions[keyNew] = self._questions[keyOld]
-                        }
-                    }
-                    for (var qidx = 0; qidx < data._questions.length; qidx++) {
-                        var key = data._questions[qidx].id + '-' + (repeats.length);
-                        delete self._questions[key];
-                    }
-                    self.refresh();
-                };
-
-                self.npages = pages.length;
-
-                self.pages = ko.utils.arrayMap(pages, function(page) {
-                    return new Page(page.id, page.title, page.groups, self);
+                self.pages = $.map(schema.pages, function(page) {
+                    preprocess(page);
+                    return new Page(page.id, page.title, page.contents, self);
                 });
+                self.npages = self.pages.length;
 
                 self.currentIndex = ko.observable(0);
 
@@ -298,12 +325,30 @@
                     return self.currentIndex() === self.npages - 1;
                 });
 
+                self.refresh();
+
             }
 
             ViewModel.prototype = {
 
+                getTemplate: function(data) {
+                    if (data['contentType'] == 'section') {
+                        return 'section';
+                    } else {
+                        return 'question';
+                    }
+                },
+
                 refresh: function() {
                     this._refresh(Math.random());
+                },
+
+                updateIdx: function() {
+                    $.each(this.pages, function(pidx, page) {
+                        $.each(page.contents(), function(cidx, content) {
+                            content.updateIdx('add');
+                        });
+                    });
                 },
 
                 previous: function() {
@@ -316,46 +361,27 @@
                     this.refresh();
                 },
 
-                afterRender: function() {
-
-                    $.each(this.pages, function(pidx, page) {
-                        $.each(page.groups, function(gidx, group) {
-                            group.afterRender();
-                        });
-                    });
-
-                    this.refresh();
-
+                showRemove: function(data) {
+                    var count = data.$parent.repeatCount ? data.$parent.repeatCount() : null;
+                    return data.$parent.repeatSection &&
+                            count > data.minRepeat;
                 },
 
-                complete: function() {
-                    var complete = true;
-                    $.each(this._questions, function(key, value) {
-                        if (value.required && !value.value()) {
-                            complete = false;
-                            return false;
-                        }
-                    });
-                    return complete;
+                showAdd: function(data) {
+                    var count = data.repeatCount ? data.repeatCount() : null;
+                    var show = data.repeatSection && (
+                            data.maxRepeat == null ||
+                            count < data.maxRepeat
+                        );
+                    return !!show;
                 },
 
-                serialize: function() {
-                    var result = {};
-                    $.each(this._questions, function(key, value) {
-                        result[key] = value.value() || "";
-                    });
-                    return result;
-                },
-
+                // todo: write!
                 submit: function() {
-                    if (!this.complete()) {
-                        alert('Survey not complete!');
-                    } else {
-                        alert('Submitting data: ' + JSON.stringify(this.serialize()));
-                    }
+
                 }
 
-            };
+            }
 
         </script>
 
@@ -365,38 +391,10 @@
 
         <div id="meta-data-container">
 
-            <form class="form" data-bind="with:currentPage">
-                <h2 data-bind="text:title"></h2>
-                <div data-bind="foreach:groups">
-                    <div data-bind="if:visible">
-                        <div data-bind="attr:{class:$data.klass}">
-                            <div data-bind="foreach:repeats">
-                                <div data-bind="attr:{class:klass}">
-                                    <div data-bind="foreach:questions">
-                                        <div class="control-group">
-                                            <label class="control-label" data-bind="css:{required:required}">
-                                                <span data-bind="if:required">* </span>
-                                                <span data-bind="text:label, attr:{for:key}"></span>
-                                            </label>
-                                            <div class="controls">
-                                                <span class="help-block" data-bind="text:helpText"></span>
-                                                <div data-bind='item:$data, attr:{id:id}'></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div data-bind="if:$parent.canRemove">
-                                        <a class="btn btn-danger remove-repeat-group" data-bind="click:function(){$root.removeRepeatGroup($parent, $data.idx)}, text:$root.removeRepeatText($parent)"></a>
-                                    </div>
-                                </div>
-                            </div>
-                            <div data-bind="if:canAdd">
-                                <div>
-                                    <a class="btn btn-success add-repeat-group" data-bind="click:$root.addRepeatGroup, text:$root.addRepeatText($data)"></a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <form data-bind="with:currentPage">
+
+                <div data-bind="template:{name:'section', data:$data}"></div>
+
             </form>
 
             <hr />
@@ -415,15 +413,15 @@
                 </div>
             </div>
 
-            <hr />
+            <!--<hr />-->
 
-            <!-- Submission -->
-            <div class="control-group">
-                <div class="controls">
-                    <input type="submit" value="Submit" class="btn" data-bind="click:submit" />
-                    <a class="btn comment-cancel">Cancel</a>
-                </div>
-            </div>
+            <!--&lt;!&ndash; Submission &ndash;&gt;-->
+            <!--<div class="control-group">-->
+                <!--<div class="controls">-->
+                    <!--<input type="submit" value="Submit" class="btn" data-bind="click:submit" />-->
+                    <!--<a class="btn comment-cancel">Cancel</a>-->
+                <!--</div>-->
+            <!--</div>-->
 
         </div>
 
@@ -435,7 +433,8 @@
                 viewModel,
                 document.getElementById('meta-data-container')
             );
-            viewModel.afterRender();
+            // todo: move to constructor
+            viewModel.updateIdx();
 
         </script>
 

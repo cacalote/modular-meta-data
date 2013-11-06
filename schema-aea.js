@@ -14,7 +14,10 @@ schema = {
                         {
                             "type": "textfield",
                             "id": "registration_number",
-                            "label": "AEA RCT Registration Number"
+                            "label": "AEA RCT Registration Number",
+                            "displayRules": {
+                                "title": "foo"
+                            }
                         },
                         {
                             "type": "textfield",
@@ -490,6 +493,8 @@ schema = {
                         },
                         {
                             "type": "file",
+//                            "type": "select",
+//                            "options": "$context.files",
                             "id": "supporting_document",
                             "label": "Select document"
                         }
@@ -524,7 +529,8 @@ schema = {
                         {
                             "type": "file",
                             "id": "add_document",
-                            "label": "Add document"
+                            "label": "Add document",
+                            "caption": ""
                         }
                     ],
                     "title": "Analysis Plan"

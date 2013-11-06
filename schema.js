@@ -1,102 +1,57 @@
 schema = {
-    'pages': [
+    pages: [
         {
-            'id': 'page1',
-            'title': 'page1',
-            'groups': [
+            id: 'page1',
+            title: 'page1',
+            contents: [
                 {
-                    'id': 'group0',
-                    'canRepeat': false,
-                    'displayRules': {
-                        'age-1': 'foo'
-                    },
-                    'questions': [
+                    id: 'section1',
+                    title: 'section1',
+                    contentType: 'section',
+                    contents: [
                         {
-                            'id': 'datacompletion',
-                            'type': 'select',
-                            'label': 'Is data collection for this project underway or complete?',
-                            'caption': 'Please choose',
-                            'options': ['No', 'Yes']
+                            id: 'question1',
+                            type: 'textarea',
+                            label: 'question1',
+                            caption: 'question1',
+                            contentType: 'question'
                         },
                         {
-                            'id': 'looked',
-                            'type': 'select',
-                            'label': 'Have you looked at the data?',
-                            'caption': 'Please choose',
-                            'options': ['No', 'Yes']
+                            id: 'question2',
+                            type: 'textfield',
+                            label: 'question2',
+                            caption: 'question2',
+                            contentType: 'question',
+                            canRepeat: true
                         },
                         {
-                            'id': 'comments',
-                            'type': 'textarea',
-                            'label': 'Other Comments'
+                            id: 'questionx',
+                            type: 'textfield',
+                            label: 'questionx',
+                            caption: 'questionx',
+                            contentType: 'question',
+                            displayRules: {
+                                'question1': 'foo'
+                            }
                         }
-                    ]
-                },
-                {
-                    'id': 'group1',
-                    'canRepeat': true,
-                    'minRepeat': 1,
-                    'maxRepeat': 3,
-                    'initRepeat': 1,
-                    'questions': [
-                        {
-                            'id': 'age',
-                            'type': 'textarea',
-                            'label': 'Age'
-                        },
-                        {
-                            'id': 'sex',
-                            'type': 'textarea',
-                            'label': 'Sex'
-                        },
-                        {
-                            'id': 'location',
-                            'type': 'textarea',
-                            'label': 'Location'
-                        }
-                    ]
-                },
-                {
-                    'id': 'group00',
-                    'questions': [
-                        {
-                            'id': 'yesno',
-                            'type': 'select',
-                            'label': 'foo',
-                            'caption': '',
-                            'options': ['No', 'Yes'],
-                            'required': true,
-                        },
-                        {
-                            'id': 'file',
-                            'type': 'file',
-                            'label': 'Add file',
-                            'caption': 'Please choose'
-                        }
-                    ]
-                },
+                    ],
+                    canRepeat: true,
+                    minRepeat: 1,
+                    maxRepeat: 3
+                }
             ]
         },
         {
-            'id': 'page1',
-            'title': 'page1',
-            'groups': [
+            id: 'page2',
+            title: 'page2',
+            contents: [
                 {
-                    'id': 'group1',
-                    'canRepeat': true,
-                    'maxRepeat': 3,
-                    'questions': [
-                        {
-                            'id': 'title',
-                            'type': 'textarea',
-                            'label': 'Job title'
-                        },
-                        {
-                            'id': 'institution',
-                            'type': 'textarea',
-                            'label': 'Institution'
-                        }
-                    ]
+                    id: 'question4',
+                    type: 'textfield',
+                    label: 'question4',
+                    caption: 'question4',
+                    contentType: 'question',
+                    canRepeat: true
                 }
             ]
         }
